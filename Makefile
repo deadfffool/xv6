@@ -130,12 +130,7 @@ UPROGS=\
 	$U/_stressfs\
 	$U/_usertests\
 	$U/_grind\
-	$U/_sleep\
-	$U/_pingpong\
-	$U/_prime\
-	$U/_find\
 	$U/_wc\
-	$U/_xargs\
 	$U/_zombie\
 
 fs.img: mkfs/mkfs README $(UPROGS)
