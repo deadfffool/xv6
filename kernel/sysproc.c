@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -101,3 +102,12 @@ sys_trace(void)
   return 0;
 }
 
+extern uint64 sysinfo(struct sysinfo *info);
+
+uint64
+sys_info(void)
+{
+  struct sysinfo *info;
+  argaddr(0,(uint64*)&info);
+  return sysinfo(info);
+}

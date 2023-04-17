@@ -4,6 +4,8 @@
         "types.h": "c",
         "stat.h": "c",
         "fs.h": "c",
-        "user.h": "c"
+        "user.h": "c",
+        "sysinfo.h": "c",
+        "proc.h": "c"
     }
 }

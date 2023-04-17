@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sysinfo.h"
 
 struct cpu cpus[NCPU];
 
@@ -19,6 +20,8 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+
+extern uint64 countFreeMem(void);
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -145,6 +148,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  p->trace_mask = 0; // 防止垃圾数据
 
   return p;
 }
@@ -681,4 +685,30 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+
+uint64
+countProc(void)
+{
+  uint64 nproc =0;
+  for(struct proc *p=&proc[0];p<&proc[NPROC];++p)
+  {
+    acquire(&p->lock);
+    if(p->state != UNUSED)
+      ++nproc;
+    release(&p->lock);
+  }
+  return nproc;
+}
+
+uint64 sysinfo(struct sysinfo *info)
+{
+    uint64 freemem = countFreeMem();
+    uint64 nproc = countProc();
+    struct proc *p = myproc();
+    if(copyout(p->pagetable, (uint64)&info->freemem, (char*)&freemem, sizeof freemem) < 0 ||
+       copyout(p->pagetable, (uint64)&info->nproc, (char*)&nproc, sizeof nproc) < 0)
+       return -1;
+    return 0;
 }
