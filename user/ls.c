@@ -42,7 +42,6 @@ ls(char *path)
   }
 
   switch(st.type){
-  case T_DEVICE:
   case T_FILE:
     printf("%s %d %d %l\n", fmtname(path), st.type, st.ino, st.size);
     break;
@@ -56,7 +55,7 @@ ls(char *path)
     p = buf+strlen(buf);
     *p++ = '/';
     while(read(fd, &de, sizeof(de)) == sizeof(de)){
-      if(de.inum == 0)  //表示该项目未被使用或者被删除了
+      if(de.inum == 0)
         continue;
       memmove(p, de.name, DIRSIZ);
       p[DIRSIZ] = 0;
