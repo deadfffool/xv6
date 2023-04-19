@@ -179,6 +179,8 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t,int);
+void            each_kvmmap(pagetable_t,uint64,uint64,uint64,int);
+pagetable_t     each_kvminit(void);
 
 
 // plic.c

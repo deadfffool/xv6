@@ -30,8 +30,8 @@ kvminit()
   // virtio mmio disk interface
   kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
-  // CLINT
-  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // // CLINT
+  // kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
   // PLIC
   kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -45,6 +45,44 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+}
+
+pagetable_t
+each_kvminit()
+{
+  pagetable_t my_pagetable = (pagetable_t) kalloc();
+  memset(my_pagetable, 0, PGSIZE);
+
+  // uart registers
+  each_kvmmap(my_pagetable,UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  each_kvmmap(my_pagetable,VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // // CLINT
+  // each_kvmmap(my_pagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  each_kvmmap(my_pagetable,PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  each_kvmmap(my_pagetable,KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  each_kvmmap(my_pagetable,(uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  each_kvmmap(my_pagetable,TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  return my_pagetable;
+}
+
+void 
+each_kvmmap(pagetable_t my_pagetable ,uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(my_pagetable, va, sz, pa, perm) != 0)
+    panic("kvmmap");
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -443,20 +481,24 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 }
 
 
-void vmprint(pagetable_t pagetable,int level)
+void vmprint(pagetable_t pagetable, int level)
 {
-  if(level==1)
-    printf("page table %p\n",pagetable);
-  for(int i = 0; i < 512; i++)
-  {
+  if(level==1) printf("page table %p\n", pagetable);
+  for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
-    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
-    {
+    if((pte & PTE_V)){
+      // this PTE points to a lower-level page table.
+      for (int j = 0; j < level; j++)
+      {
+        if (j == 0) printf("..");
+        else printf(" ..");
+      }
       uint64 child = PTE2PA(pte);
-      for(int j=0;j<level;j++)  printf("  ");
       printf("%d: pte %p pa %p\n", i, pte, child);
-      if(level==3)  continue;
-      else vmprint((pagetable_t)child,level+1);
-    } 
-  } 
+      // 查看flag位是否被设置，若被设置则为最低一层，
+      // 见vm.c161行，可以看到只有最底层被设置了符号位
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0)
+        vmprint((pagetable_t)child, level + 1);
+    }
+  }
 }
