@@ -47,44 +47,6 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
-pagetable_t
-each_kvminit()
-{
-  pagetable_t my_pagetable = (pagetable_t) kalloc();
-  memset(my_pagetable, 0, PGSIZE);
-
-  // uart registers
-  each_kvmmap(my_pagetable,UART0, UART0, PGSIZE, PTE_R | PTE_W);
-
-  // virtio mmio disk interface
-  each_kvmmap(my_pagetable,VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-
-  // CLINT
-  each_kvmmap(my_pagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
-
-  // PLIC
-  each_kvmmap(my_pagetable,PLIC, PLIC, 0x400000, PTE_R | PTE_W);
-
-  // map kernel text executable and read-only.
-  each_kvmmap(my_pagetable,KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
-
-  // map kernel data and the physical RAM we'll make use of.
-  each_kvmmap(my_pagetable,(uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
-
-  // map the trampoline for trap entry/exit to
-  // the highest virtual address in the kernel.
-  each_kvmmap(my_pagetable,TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
-
-  return my_pagetable;
-}
-
-void 
-each_kvmmap(pagetable_t my_pagetable ,uint64 va, uint64 pa, uint64 sz, int perm)
-{
-  if(mappages(my_pagetable, va, sz, pa, perm) != 0)
-    panic("kvmmap");
-}
-
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void
@@ -263,7 +225,6 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
-// 使用kalloc请求物理页面之后再使用mappages创建页面映射
 uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
@@ -418,7 +379,23 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  return copyin_new(pagetable,dst,srcva,len);
+  uint64 n, va0, pa0;
+
+  while(len > 0){
+    va0 = PGROUNDDOWN(srcva);
+    pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0)
+      return -1;
+    n = PGSIZE - (srcva - va0);
+    if(n > len)
+      n = len;
+    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
+
+    len -= n;
+    dst += n;
+    srcva = va0 + PGSIZE;
+  }
+  return 0;
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -428,45 +405,38 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  return copyinstr_new(pagetable, dst, srcva, max);
-}
+  uint64 n, va0, pa0;
+  int got_null = 0;
 
+  while(got_null == 0 && max > 0){
+    va0 = PGROUNDDOWN(srcva);
+    pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0)
+      return -1;
+    n = PGSIZE - (srcva - va0);
+    if(n > max)
+      n = max;
 
-void vmprint(pagetable_t pagetable, int level)
-{
-  if(level==1) printf("page table %p\n", pagetable);
-  for(int i = 0; i < 512; i++){
-    pte_t pte = pagetable[i];
-    if((pte & PTE_V)){
-      // this PTE points to a lower-level page table.
-      for (int j = 0; j < level; j++)
-      {
-        if (j == 0) printf("..");
-        else printf(" ..");
+    char *p = (char *) (pa0 + (srcva - va0));
+    while(n > 0){
+      if(*p == '\0'){
+        *dst = '\0';
+        got_null = 1;
+        break;
+      } else {
+        *dst = *p;
       }
-      uint64 child = PTE2PA(pte);
-      printf("%d: pte %p pa %p\n", i, pte, child);
-      // 查看flag位是否被设置，若被设置则为最低一层，
-      // 见vm.c161行，可以看到只有最底层被设置了符号位
-      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0)
-        vmprint((pagetable_t)child, level + 1);
+      --n;
+      --max;
+      p++;
+      dst++;
     }
-  }
-}
 
-void uvm_user2kernel(pagetable_t u, pagetable_t k, uint64 start, uint64 end)
-{
-  pte_t *user;
-  pte_t *kernel;
-  for(uint64 i = start; i < end; i += PGSIZE)
-  {
-    user = walk(u, i, 0);
-    kernel = walk(k, i, 1);
-  /*
-      根据内核态页表的特点--直接映射到物理内存
-      我们无需使用mappage建立映射
-      记得消除PTE_U标志位
-  */
-    *kernel = (*user) & (~PTE_U);
+    srcva = va0 + PGSIZE;
+  }
+  if(got_null){
+    return 0;
+  } else {
+    return -1;
   }
 }

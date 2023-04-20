@@ -9,32 +9,6 @@
 
 static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uint sz);
 
-// elf
-// magic：用于标识 ELF 文件的魔数，必须等于 ELF_MAGIC。
-// elf：固定长度为 12 字节的无意义字段，用于填充结构体大小。
-// type：指定 ELF 文件类型，如可执行文件、共享库等。
-// machine：指定 ELF 文件所运行的目标机器类型，如 x86、RISC-V 等。
-// version：指定 ELF 文件的版本号。
-// entry：程序入口的虚拟地址。
-// phoff：指定 Program Header Table 的文件偏移量。 
-// shoff：指定 Section Header Table 的文件偏移量。
-// flags：指定标志位，用于标识 ELF 文件属性。
-// ehsize：指定 ELF 头部的大小。
-// phentsize：指定 Program Header Table 中一个 entry 的大小。
-// phnum：指定 Program Header Table 中 entry 的个数。
-// shentsize：指定 Section Header Table 中一个 entry 的大小。
-// shnum：指定 Section Header Table 中 entry 的个数。
-// shstrndx：指定 Section Header Table 中包含字符串表的 entry 的索引。
-
-// proghdr
-// type：指定程序段类型。
-// flags：指定段的属性，如可读、可写、可执行等。
-// off：指定段的文件偏移量。
-// vaddr：指定段在虚拟内存中的起始地址。
-// paddr：指定段在物理内存中的起始地址。
-// filesz：指定段在文件中的长度。
-// memsz：指定段在内存中的长度。
-// align：指定段在文件中和内存中的对齐方式。
 int
 exec(char *path, char **argv)
 {
@@ -76,8 +50,6 @@ exec(char *path, char **argv)
       goto bad;
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
-      goto bad;
-    if(sz1 > PLIC)
       goto bad;
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
@@ -143,11 +115,6 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
-
-  uvm_user2kernel(p->pagetable, p->kernel_pagetable, 0, sz);
-
-  //vmprint
-  if(p->pid==1) vmprint(p->pagetable,1);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 

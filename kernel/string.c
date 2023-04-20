@@ -27,7 +27,6 @@ memcmp(const void *v1, const void *v2, uint n)
   return 0;
 }
 
-//可以在内存重叠的情况下安全地复制数据
 void*
 memmove(void *dst, const void *src, uint n)
 {
