@@ -30,8 +30,8 @@ kvminit()
   // virtio mmio disk interface
   kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
-  // // CLINT
-  // kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // CLINT
+  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
   // PLIC
   kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -59,8 +59,8 @@ each_kvminit()
   // virtio mmio disk interface
   each_kvmmap(my_pagetable,VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
-  // // CLINT
-  // each_kvmmap(my_pagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // CLINT
+  each_kvmmap(my_pagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
   // PLIC
   each_kvmmap(my_pagetable,PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -418,23 +418,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
-
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  return copyin_new(pagetable,dst,srcva,len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -444,40 +428,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
-
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
-
-    srcva = va0 + PGSIZE;
-  }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 
@@ -500,5 +451,22 @@ void vmprint(pagetable_t pagetable, int level)
       if ((pte & (PTE_R|PTE_W|PTE_X)) == 0)
         vmprint((pagetable_t)child, level + 1);
     }
+  }
+}
+
+void uvm_user2kernel(pagetable_t u, pagetable_t k, uint64 start, uint64 end)
+{
+  pte_t *user;
+  pte_t *kernel;
+  for(uint64 i = start; i < end; i += PGSIZE)
+  {
+    user = walk(u, i, 0);
+    kernel = walk(k, i, 1);
+  /*
+      根据内核态页表的特点--直接映射到物理内存
+      我们无需使用mappage建立映射
+      记得消除PTE_U标志位
+  */
+    *kernel = (*user) & (~PTE_U);
   }
 }
