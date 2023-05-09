@@ -8,6 +8,7 @@
         "cmath": "c",
         "*.tcc": "c",
         "elf.h": "c",
-        "defs.h": "c"
+        "defs.h": "c",
+        "proc.h": "c"
     }
 }
