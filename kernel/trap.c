@@ -15,7 +15,6 @@ extern char trampoline[], uservec[], userret[];
 void kernelvec();
 
 extern int devintr();
-extern uint64 cow_copy(pagetable_t,uint64 va);
 
 void
 trapinit(void)
@@ -66,17 +65,7 @@ usertrap(void)
     intr_on();
 
     syscall();
-  }
-  else if(r_scause() == 13 || r_scause() == 15)
-  {
-    uint64 va = r_stval();
-    if(cow_copy(p->pagetable, va) == 0)
-    {
-      // panic("be kill\n");
-      p->killed = 1;
-    }
-  }
-  else if((which_dev = devintr()) != 0){
+  } else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
