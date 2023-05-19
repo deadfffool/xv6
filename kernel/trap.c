@@ -10,7 +10,6 @@ struct spinlock tickslock;
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
-extern pte_t * walk(pagetable_t pagetable, uint64 va, int alloc);
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -66,32 +65,7 @@ usertrap(void)
     intr_on();
 
     syscall();
-  }else if (r_scause() == 15 || r_scause() == 13)
-  {
-    uint64 va = r_stval();
-    if(va >= p->sz || va <= PGROUNDDOWN(p->trapframe->sp))  
-      p->killed=1;
-    pte_t *pte;
-    pte = walk(p->pagetable, va, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0)
-    {
-      uint64 ka = (uint64) kalloc();
-      if(ka==0)
-        p->killed=1;
-      else
-      {
-        memset((void*)ka,0,PGSIZE);
-        va = PGROUNDDOWN(va);
-        if(mappages(p->pagetable,va,PGSIZE,ka,PTE_W|PTE_U|PTE_R)!=0)
-        {
-          kfree((void*)ka);
-          p->killed =1;
-        }
-      }
-    }
-  }
-   
-  else if((which_dev = devintr()) != 0){
+  } else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);

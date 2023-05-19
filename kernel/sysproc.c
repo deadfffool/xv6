@@ -47,17 +47,11 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  uint64 newaddr = addr + n;
-  if(newaddr >= MAXVA || newaddr <= 0)
-    return addr;
-  if(n < 0)
-  {
-    if (uvmdealloc(myproc()->pagetable, addr, newaddr) != newaddr)
-      return -1;
-  }
-  myproc()->sz = newaddr;
+  if(growproc(n) < 0)
+    return -1;
   return addr;
 }
+
 uint64
 sys_sleep(void)
 {
