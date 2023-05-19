@@ -15,6 +15,8 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+extern int get_mem_ref(uint64);
+extern int add_ref(uint64);
 /*
  * create a direct-map page table for the kernel.
  */
@@ -311,22 +313,23 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+
     pa = PTE2PA(*pte);
+    *pte = (*pte) & (~PTE_W); // set the write flag fault
+    *pte = (*pte) | (PTE_COW);// set the cow flag true
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    //map the child pte to it's parent's phyical address
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
       goto err;
     }
+    add_ref(pa);
   }
   return 0;
 
@@ -348,6 +351,80 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+/*
+    操作cow页面的辅助函数
+*/
+
+//检查页表项是否有效以及是否cow页面
+int
+cow_check(pagetable_t pagetable, uint64 va)
+{
+  if(va > MAXVA)
+    return 0;
+
+  pte_t *pte = walk(pagetable, va, 0);
+
+  if(pte == 0)
+    return 0;
+  // printf("judge here 0\n");
+  if(((*pte) & (PTE_V)) == 0)
+    return 0;
+  // printf("judge here 1\n");
+  int ans = (*pte) & (PTE_COW);
+
+  return ans;
+
+}
+
+/*
+    为引发缺页中断的页表项分配物理内存以及映射
+    记得先将页表项的PTE_V标志位置0，否则会引发remap
+    旧页表项的标志位我们不和新页表项一起处理，当访问旧页表项时再回到这个函数统一处理，减少情况判断
+*/
+uint64 
+cow_copy(pagetable_t pagetable, uint64 va)
+{
+  if(cow_check(pagetable, va) == 0)
+    return 0;
+
+  va = PGROUNDDOWN(va);
+  pte_t *pte = walk(pagetable, va, 0);
+  uint64 pa = PTE2PA(*pte);
+
+
+  if(get_mem_ref(pa) == 1)
+  {
+    *pte = (*pte) & (~PTE_COW);
+    *pte = (*pte) | (PTE_W);
+    return pa;
+  }
+  else
+  {
+    char *mem = kalloc();
+    if(mem == 0){
+      return 0;
+    }
+
+    memmove(mem, (char *)pa, PGSIZE);
+    *pte = (*pte) & (~PTE_V);
+    uint64 flag = PTE_FLAGS(*pte);
+    flag = flag | PTE_W;
+    flag = flag & (~PTE_COW);
+
+
+    if(mappages(pagetable, va, PGSIZE, (uint64)mem, flag) != 0)
+    {
+      kfree(mem);
+      return 0;
+    }
+
+    kfree((char*)PGROUNDDOWN(pa));
+
+    return (uint64)mem;
+
+  }
+}
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -356,11 +433,16 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
-  while(len > 0){
+  while(len > 0)
+  {
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
+
+    if(cow_check(pagetable, va0) != 0)
+      pa0 = cow_copy(pagetable, va0);
     if(pa0 == 0)
       return -1;
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
