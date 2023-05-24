@@ -10,6 +10,7 @@
         "elf.h": "c",
         "defs.h": "c",
         "proc.h": "c",
-        "riscv.h": "c"
+        "riscv.h": "c",
+        "type_traits": "c"
     }
 }
